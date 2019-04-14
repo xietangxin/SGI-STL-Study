@@ -1,12 +1,12 @@
 #include <iostream>
 
-#include "tree.h"
-#include "function.h"
+#include "stl_tree.h"
+#include "stl_function.h"
 
 using namespace std;
 
 int main()
 {
-    rb_tree<int, int, identity<int>, less<int>> itree;
-    cout << itree.size << endl;
+    _Rb_tree<int, int, _Identity<int>, less<int> > itree;
+    cout << itree.size() << endl;
 }
