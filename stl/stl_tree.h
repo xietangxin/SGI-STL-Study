@@ -257,6 +257,10 @@ _Rb_tree_rotate_right(_Rb_tree_node_base* __x, _Rb_tree_node_base*& __root)
   __x->_M_parent = __y;
 }
 
+// 任何插入操作，在节点插入完毕后，都要做一次调整操作，将树调整成符合RB-Tree的要求
+// 旋转及改变颜色
+// @param  __x      新增节点
+// @param  __root   root
 inline void 
 _Rb_tree_rebalance(_Rb_tree_node_base* __x, _Rb_tree_node_base*& __root)
 {
@@ -861,42 +865,50 @@ _Rb_tree<_Key,_Value,_KeyOfValue,_Compare,_Alloc>
   return *this;
 }
 
+// 参数__x_ 为新值插入点  参数__y_ 为插入点之父节点 参数__v为新值
 template <class _Key, class _Value, class _KeyOfValue, 
           class _Compare, class _Alloc>
 typename _Rb_tree<_Key,_Value,_KeyOfValue,_Compare,_Alloc>::iterator
 _Rb_tree<_Key,_Value,_KeyOfValue,_Compare,_Alloc>
-  ::_M_insert(_Base_ptr __x_, _Base_ptr __y_, const _Value& __v)
+  ::_M_insert(_Base_ptr __x_, _Base_ptr __y_, const _Value& __v) 
 {
   _Link_type __x = (_Link_type) __x_;
   _Link_type __y = (_Link_type) __y_;
   _Link_type __z;
 
+  // _M_key_compare 是键值大小比较准则，应该是个function object
   if (__y == _M_header || __x != 0 || 
       _M_key_compare(_KeyOfValue()(__v), _S_key(__y))) {
-    __z = _M_create_node(__v);
+    __z = _M_create_node(__v);  // 产生一个新节点
+    // 这使得当__y即为header时，_M_leftmost() = z
     _S_left(__y) = __z;               // also makes _M_leftmost() = __z 
                                       //    when __y == _M_header
     if (__y == _M_header) {
       _M_root() = __z;
       _M_rightmost() = __z;
     }
-    else if (__y == _M_leftmost())
+    else if (__y == _M_leftmost())  // 如果y为最左节点
+        // 维护_M_leftmost(),使它永远指向最左节点
       _M_leftmost() = __z;   // maintain _M_leftmost() pointing to min node
   }
   else {
-    __z = _M_create_node(__v);
-    _S_right(__y) = __z;
+    __z = _M_create_node(__v);  // 产生一个新节点
+    _S_right(__y) = __z;        // 令新节点成为插入点之父节点y的右子节点
     if (__y == _M_rightmost())
+        // 维护_M_rightmost(),使它永远指向最右节点
       _M_rightmost() = __z;  // maintain _M_rightmost() pointing to max node
   }
-  _S_parent(__z) = __y;
-  _S_left(__z) = 0;
-  _S_right(__z) = 0;
-  _Rb_tree_rebalance(__z, _M_header->_M_parent);
-  ++_M_node_count;
-  return iterator(__z);
+  _S_parent(__z) = __y; // 设置新节点的父节点
+  _S_left(__z) = 0;     // 设置新节点的左子节点
+  _S_right(__z) = 0;    // 设置新节点的右子节点
+                        // 新节点的颜色将在__rb_tree_rebalance()设定(并调整)
+  _Rb_tree_rebalance(__z, _M_header->_M_parent);    // 参数一为新增节点，参数二为root
+  ++_M_node_count;  // 节点数累加
+  return iterator(__z); // 返回一个迭代器，指向新增节点
 }
 
+// 插入新值: 节点键值允许重复
+// 注意，返回值是一个RB-tree迭代器，指向新增节点
 template <class _Key, class _Value, class _KeyOfValue, 
           class _Compare, class _Alloc>
 typename _Rb_tree<_Key,_Value,_KeyOfValue,_Compare,_Alloc>::iterator
@@ -904,16 +916,18 @@ _Rb_tree<_Key,_Value,_KeyOfValue,_Compare,_Alloc>
   ::insert_equal(const _Value& __v)
 {
   _Link_type __y = _M_header;
-  _Link_type __x = _M_root();
-  while (__x != 0) {
+  _Link_type __x = _M_root();   // 从根节点开始
+  while (__x != 0) {            // 从根节点开始，往下寻找适当的插入点
     __y = __x;
     __x = _M_key_compare(_KeyOfValue()(__v), _S_key(__x)) ? 
-            _S_left(__x) : _S_right(__x);
+            _S_left(__x) : _S_right(__x); // 以上，遇“大”则往左，遇“小”则往右
   }
   return _M_insert(__x, __y, __v);
 }
 
-
+  
+// 插入新值：节点键值不允许重复，若重复则插入无效
+// 注意，返回值是个pair，第一个元素是RB-tree迭代器，指向新节点，第二个元素表示插入成功与否
 template <class _Key, class _Value, class _KeyOfValue, 
           class _Compare, class _Alloc>
 pair<typename _Rb_tree<_Key,_Value,_KeyOfValue,_Compare,_Alloc>::iterator, 
@@ -922,21 +936,25 @@ _Rb_tree<_Key,_Value,_KeyOfValue,_Compare,_Alloc>
   ::insert_unique(const _Value& __v)
 {
   _Link_type __y = _M_header;
-  _Link_type __x = _M_root();
+  _Link_type __x = _M_root();   // 从根节点开始
   bool __comp = true;
-  while (__x != 0) {
+  while (__x != 0) {            // 从根节点开始，往下寻找适当的插入点
     __y = __x;
-    __comp = _M_key_compare(_KeyOfValue()(__v), _S_key(__x));
-    __x = __comp ? _S_left(__x) : _S_right(__x);
+    __comp = _M_key_compare(_KeyOfValue()(__v), _S_key(__x));   // __v键值小于目前节点之键值
+    __x = __comp ? _S_left(__x) : _S_right(__x);                // 遇“大”则往左，遇“小于或等于”则往右
   }
-  iterator __j = iterator(__y);   
-  if (__comp)
-    if (__j == begin())     
-      return pair<iterator,bool>(_M_insert(__x, __y, __v), true);
-    else
-      --__j;
+  iterator __j = iterator(__y);   // 令迭代器__j指向插入点之父节点__y
+  if (__comp) // 如果离开while循环时，comp为真（表示遇到“大”， 将插入到左侧）
+    if (__j == begin())     // 如果插入点之父节点为最左节点
+      return pair<iterator,bool>(_M_insert(__x, __y, __v), true); // 以上，__x为插入点，__y为插入点之父节点，__v为新值
+    else // 否则（插入点之父节点不为最左节点）
+      --__j; // 调整j，回头准备测试
   if (_M_key_compare(_S_key(__j._M_node), _KeyOfValue()(__v)))
+    // 新键值不与既有节点之键值重复，于是以下执行安插操作
     return pair<iterator,bool>(_M_insert(__x, __y, __v), true);
+    // 以上，__x为新值插入点， __y为插入点之父节点， __v为新值
+
+  // 进行至此，表示新值一定与树中键值重复，那么就不该插入新值
   return pair<iterator,bool>(__j, false);
 }
 
