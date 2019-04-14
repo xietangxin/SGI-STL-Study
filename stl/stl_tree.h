@@ -98,50 +98,56 @@ struct _Rb_tree_node : public _Rb_tree_node_base
   _Value _M_value_field;
 };
 
-
+// 基层迭代器
 struct _Rb_tree_base_iterator
 {
   typedef _Rb_tree_node_base::_Base_ptr _Base_ptr;
   typedef bidirectional_iterator_tag iterator_category;
   typedef ptrdiff_t difference_type;
-  _Base_ptr _M_node;
+  _Base_ptr _M_node; // 它用来和容器之间产生一个连结关系(make a reference)
 
+  //  以下其实可以实现在operator++ 内，因为再无他处调用此函数
   void _M_increment()
   {
-    if (_M_node->_M_right != 0) {
-      _M_node = _M_node->_M_right;
-      while (_M_node->_M_left != 0)
-        _M_node = _M_node->_M_left;
+    if (_M_node->_M_right != 0) { //如果有右子树
+      _M_node = _M_node->_M_right; // 就向右走
+      while (_M_node->_M_left != 0) // 然后一直往左走
+        _M_node = _M_node->_M_left; // 即是解答
     }
-    else {
-      _Base_ptr __y = _M_node->_M_parent;
-      while (_M_node == __y->_M_right) {
-        _M_node = __y;
+    else { //没有右子节点
+      _Base_ptr __y = _M_node->_M_parent; //找出父节点
+      while (_M_node == __y->_M_right) { // 如果现行节点本身是父节点的右子节点
+        _M_node = __y;                  //就一直上溯，直到 “不为右子节点”为止
         __y = __y->_M_parent;
       }
-      if (_M_node->_M_right != __y)
-        _M_node = __y;
+      if (_M_node->_M_right != __y) // 若此时的右子节点不等于此时的父节点， 此时的父节点就是解答
+        _M_node = __y;              // 否则此时的node为解答
     }
+    // 注意，以上判断“若此时的右子节点不等于此时的父节点”，是为了应付一种特殊情况：我们欲寻找根节点的下一个节点,
+    // 而恰巧根节点无右子节点，当然，以上的特殊做法必须配合RB-Tree根节点与特殊之header之间的特殊关系
   }
 
+  //  以下其实可以实现在operator++ 内，因为再无他处调用此函数
   void _M_decrement()
   {
     if (_M_node->_M_color == _S_rb_tree_red &&
-        _M_node->_M_parent->_M_parent == _M_node)
-      _M_node = _M_node->_M_right;
-    else if (_M_node->_M_left != 0) {
-      _Base_ptr __y = _M_node->_M_left;
-      while (__y->_M_right != 0)
-        __y = __y->_M_right;
-      _M_node = __y;
+        _M_node->_M_parent->_M_parent == _M_node) //如果是红节点，且父节点的父节点等于自己
+      _M_node = _M_node->_M_right; // 右子节点即为解答
+    // 以上情况发生于node为header时(亦即node为end()时)
+    // 注意，header之右子节点即mostright，指向整颗树的max节点
+    else if (_M_node->_M_left != 0) { // 如果有左子节点
+      _Base_ptr __y = _M_node->_M_left; // 令__y 指向左子节点
+      while (__y->_M_right != 0) // 当__y有右子节点时
+        __y = __y->_M_right; //一直往右子节点走到底
+      _M_node = __y; // 最后就是答案
     }
-    else {
-      _Base_ptr __y = _M_node->_M_parent;
-      while (_M_node == __y->_M_left) {
-        _M_node = __y;
-        __y = __y->_M_parent;
+    else { // 既不是根节点，也没有左子节点
+      _Base_ptr __y = _M_node->_M_parent; // 找出父节点
+      while (_M_node == __y->_M_left) { // 当现行节点身为左子节点
+        _M_node = __y; // 一直交替往上走，直到现行节点不为左子节点
+        __y = __y->_M_parent; 
       }
-      _M_node = __y;
+      _M_node = __y; // 此时父节点即是答案
     }
   }
 };
@@ -506,7 +512,7 @@ struct _Rb_tree_base
   ~_Rb_tree_base() { _M_put_node(_M_header); }
 
 protected:
-  _Rb_tree_node<_Tp>* _M_header;
+  _Rb_tree_node<_Tp>* _M_header; // 这是实现上的一个技巧
 
   typedef simple_alloc<_Rb_tree_node<_Tp>, _Alloc> _Alloc_type;
 
@@ -544,22 +550,22 @@ protected:
 #ifdef __STL_USE_NAMESPACES
   using _Base::_M_get_node;
   using _Base::_M_put_node;
-  using _Base::_M_header;
+  using _Base::_M_header; // header 是一种实现的技巧
 #endif /* __STL_USE_NAMESPACES */
 
 protected:
 
   _Link_type _M_create_node(const value_type& __x)
   {
-    _Link_type __tmp = _M_get_node();
+    _Link_type __tmp = _M_get_node(); // 配置空间
     __STL_TRY {
-      construct(&__tmp->_M_value_field, __x);
+      construct(&__tmp->_M_value_field, __x); // 构造内容
     }
     __STL_UNWIND(_M_put_node(__tmp));
     return __tmp;
   }
 
-  _Link_type _M_clone_node(_Link_type __x)
+  _Link_type _M_clone_node(_Link_type __x) // 复制一个节点（的值和色）
   {
     _Link_type __tmp = _M_create_node(__x->_M_value_field);
     __tmp->_M_color = __x->_M_color;
@@ -570,14 +576,15 @@ protected:
 
   void destroy_node(_Link_type __p)
   {
-    destroy(&__p->_M_value_field);
-    _M_put_node(__p);
-  }
+    destroy(&__p->_M_value_field);  // 析构内容
+    _M_put_node(__p);               // 释放内存
+   }
 
 protected:
-  size_type _M_node_count; // keeps track of size of tree
-  _Compare _M_key_compare;
+  size_type _M_node_count; // keeps track of size of tree，跟踪记录树的大小(节点数量)
+  _Compare _M_key_compare; // 节点间的键值大小比较准则，应该会是个function object
 
+ // 以下三个函数用来方便取得header的成员
   _Link_type& _M_root() const 
     { return (_Link_type&) _M_header->_M_parent; }
   _Link_type& _M_leftmost() const 
@@ -585,6 +592,7 @@ protected:
   _Link_type& _M_rightmost() const 
     { return (_Link_type&) _M_header->_M_right; }
 
+ // 以下六个函数用来方便取得节点x的成员
   static _Link_type& _S_left(_Link_type __x)
     { return (_Link_type&)(__x->_M_left); }
   static _Link_type& _S_right(_Link_type __x)
@@ -611,6 +619,7 @@ protected:
   static _Color_type& _S_color(_Base_ptr __x)
     { return (_Color_type&)(_Link_type(__x)->_M_color); }
 
+  // 求取极大值和极小值，node class有实现此功能，交给他们完成即可
   static _Link_type _S_minimum(_Link_type __x) 
     { return (_Link_type)  _Rb_tree_node_base::_S_minimum(__x); }
 
@@ -673,19 +682,20 @@ public:
 
 private:
   void _M_empty_initialize() {
-    _S_color(_M_header) = _S_rb_tree_red; // used to distinguish header from 
+    // 令header为红色，用来区分header和root，在iterator.operator--中 
+    _S_color(_M_header) = _S_rb_tree_red; // used to distinguish header from  
                                           // __root, in iterator.operator++
-    _M_root() = 0;
-    _M_leftmost() = _M_header;
-    _M_rightmost() = _M_header;
+    _M_root() = 0;              
+    _M_leftmost() = _M_header;  // 令 header的左子节点为自己
+    _M_rightmost() = _M_header; // 令 header的右子节点为自己
   }
 
 public:    
                                 // accessors:
   _Compare key_comp() const { return _M_key_compare; }
   iterator begin() { return _M_leftmost(); }
-  const_iterator begin() const { return _M_leftmost(); }
-  iterator end() { return _M_header; }
+  const_iterator begin() const { return _M_leftmost(); } // RB 树的起点为最左（最小）节点处
+  iterator end() { return _M_header; } //RB树的终点为header所指处
   const_iterator end() const { return _M_header; }
   reverse_iterator rbegin() { return reverse_iterator(end()); }
   const_reverse_iterator rbegin() const { 
@@ -707,7 +717,9 @@ public:
     
 public:
                                 // insert/erase
+  // 将 x 插入到RB-tree中（保持节点值独一无二）
   pair<iterator,bool> insert_unique(const value_type& __x);
+  // 将 x 插入到RB-tree中（允许节点值重复）
   iterator insert_equal(const value_type& __x);
 
   iterator insert_unique(iterator __position, const value_type& __x);
